@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Playlist Tracker</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#0a0a0a;--surface:#111;--surface2:#1a1a1a;--border:#2a2a2a;--red:#ff3333;--red-dim:#ff333322;--text:#e8e8e8;--muted:#555;--seen:#1a2a1a;--seen-border:#2a4a2a;--seen-text:#5a9a5a;--tab-h:44px;}
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{background:var(--bg);color:var(--text);font-family:'DM Mono',monospace;min-height:100vh;}
+
+  header{border-bottom:1px solid var(--border);padding:18px 40px;display:flex;align-items:center;gap:14px;background:var(--surface);position:sticky;top:0;z-index:200;}
+  header h1{font-family:'Bebas Neue',sans-serif;font-size:2.2rem;letter-spacing:.08em;color:var(--red);line-height:1;}
+  .header-sub{font-size:.7rem;color:var(--muted);letter-spacing:.15em;text-transform:uppercase;margin-left:4px;align-self:flex-end;padding-bottom:3px;}
+  .sync-status{margin-left:auto;font-size:.65rem;letter-spacing:.1em;color:var(--muted);display:flex;align-items:center;gap:8px;}
+  .sync-dot{width:7px;height:7px;border-radius:50%;background:var(--muted);flex-shrink:0;transition:background .3s;}
+  .sync-dot.syncing{background:#f0a500;animation:pulse 1s infinite;}
+  .sync-dot.ok{background:var(--seen-text);}
+  .sync-dot.err{background:var(--red);}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+  .tabs-wrap{background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:flex-end;overflow-x:auto;padding:0 40px;gap:2px;position:sticky;top:73px;z-index:150;}
+  .tabs-wrap::-webkit-scrollbar{height:3px;}
+  .tabs-wrap::-webkit-scrollbar-thumb{background:var(--border);}
+  .tab{height:var(--tab-h);padding:0 16px;border:1px solid transparent;border-bottom:none;background:transparent;color:var(--muted);font-family:'DM Mono',monospace;font-size:.68rem;letter-spacing:.08em;cursor:pointer;white-space:nowrap;display:flex;align-items:center;gap:8px;transition:all .15s;position:relative;top:1px;}
+  .tab:hover{color:var(--text);background:var(--surface2);}
+  .tab.active{background:var(--bg);border-color:var(--border);color:var(--text);}
+  .tab-label{overflow:hidden;text-overflow:ellipsis;max-width:140px;}
+  .tab-close{opacity:.4;font-size:.9rem;line-height:1;flex-shrink:0;padding:2px 4px;}
+  .tab-close:hover{opacity:1;color:var(--red);}
+  .tab-add{height:var(--tab-h);padding:0 14px;background:transparent;border:none;color:var(--muted);font-size:1.4rem;cursor:pointer;display:flex;align-items:center;transition:color .15s;flex-shrink:0;position:relative;top:1px;}
+  .tab-add:hover{color:var(--red);}
+
+  .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:500;align-items:center;justify-content:center;}
+  .modal-overlay.visible{display:flex;}
+  .modal{background:var(--surface);border:1px solid var(--border);padding:32px;width:100%;max-width:540px;}
+  .modal h2{font-family:'Bebas Neue',sans-serif;font-size:1.6rem;color:var(--red);letter-spacing:.1em;margin-bottom:20px;}
+  .modal input{width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);font-family:'DM Mono',monospace;font-size:.78rem;padding:12px 16px;outline:none;margin-bottom:10px;}
+  .modal input:focus{border-color:var(--red);}
+  .modal input::placeholder{color:var(--muted);}
+  .modal-btns{display:flex;gap:10px;justify-content:flex-end;margin-top:10px;}
+  .btn-cancel{background:transparent;border:1px solid var(--border);color:var(--muted);font-family:'DM Mono',monospace;font-size:.7rem;letter-spacing:.1em;padding:10px 20px;cursor:pointer;}
+  .btn-cancel:hover{color:var(--text);}
+  .btn-load{background:var(--red);color:#fff;border:none;font-family:'Bebas Neue',sans-serif;font-size:1rem;letter-spacing:.1em;padding:10px 24px;cursor:pointer;}
+  .btn-load:hover{background:#cc2222;}
+  .btn-load:disabled{background:#333;color:#666;cursor:not-allowed;}
+  .modal-err{color:var(--red);font-size:.7rem;min-height:18px;letter-spacing:.05em;}
+
+  .stats-bar{display:none;padding:14px 40px;border-bottom:1px solid var(--border);background:var(--surface2);font-size:.7rem;letter-spacing:.12em;color:var(--muted);gap:24px;align-items:center;flex-wrap:wrap;}
+  .stats-bar.visible{display:flex;}
+  .stat{display:flex;flex-direction:column;gap:2px;}
+  .stat-num{font-family:'Bebas Neue',sans-serif;font-size:1.4rem;color:var(--text);line-height:1;}
+  .stat-num.accent{color:var(--red);}
+  .stat-divider{width:1px;height:32px;background:var(--border);flex-shrink:0;}
+  .progress-wrap{flex:1;min-width:160px;max-width:280px;margin-left:auto;}
+  .progress-label{display:flex;justify-content:space-between;font-size:.65rem;margin-bottom:6px;color:var(--muted);}
+  .progress-track{height:3px;background:var(--border);}
+  .progress-fill{height:100%;background:var(--red);transition:width .4s ease;}
+
+  .filter-bar{display:none;padding:12px 40px;border-bottom:1px solid var(--border);gap:8px;background:var(--surface);align-items:center;}
+  .filter-bar.visible{display:flex;}
+  .filter-btn{background:transparent;border:1px solid var(--border);color:var(--muted);font-family:'DM Mono',monospace;font-size:.65rem;letter-spacing:.12em;padding:5px 12px;cursor:pointer;transition:all .15s;text-transform:uppercase;}
+  .filter-btn:hover{border-color:var(--red);color:var(--text);}
+  .filter-btn.active{background:var(--red-dim);border-color:var(--red);color:var(--red);}
+  .reset-btn{background:transparent;border:1px solid var(--border);color:var(--muted);font-family:'DM Mono',monospace;font-size:.65rem;letter-spacing:.1em;padding:5px 12px;cursor:pointer;margin-left:auto;transition:all .15s;text-transform:uppercase;}
+  .reset-btn:hover{border-color:var(--red);color:var(--red);}
+
+  .list-container{padding:24px 40px 60px;max-width:1100px;}
+  .playlist-title{font-family:'Bebas Neue',sans-serif;font-size:1.3rem;letter-spacing:.1em;color:var(--muted);margin-bottom:18px;padding-bottom:10px;border-bottom:1px solid var(--border);}
+  .video-item{display:flex;align-items:center;gap:16px;padding:12px 16px;border:1px solid var(--border);margin-bottom:5px;background:var(--surface);transition:all .15s;}
+  .video-item:hover{border-color:#444;background:var(--surface2);}
+  .video-item.seen{background:var(--seen);border-color:var(--seen-border);}
+  .video-item.seen:hover{border-color:#3a6a3a;}
+  .video-item.hidden{display:none;}
+  .check-wrap{flex-shrink:0;width:22px;height:22px;}
+  .check-wrap input[type=checkbox]{appearance:none;-webkit-appearance:none;width:22px;height:22px;border:1.5px solid var(--border);background:var(--bg);cursor:pointer;transition:all .15s;position:relative;display:block;}
+  .check-wrap input[type=checkbox]:checked{background:#2a4a2a;border-color:var(--seen-text);}
+  .check-wrap input[type=checkbox]:checked::after{content:'✓';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:var(--seen-text);font-size:13px;line-height:1;}
+  .vid-num{font-size:.65rem;color:var(--muted);width:28px;text-align:right;flex-shrink:0;}
+  .thumb{width:88px;height:50px;object-fit:cover;flex-shrink:0;background:var(--border);display:block;}
+  .vid-title{flex:1;font-size:.78rem;letter-spacing:.02em;line-height:1.4;color:var(--text);text-decoration:none;transition:color .15s;}
+  .vid-title:hover{color:var(--red);}
+  .video-item.seen .vid-title{color:var(--seen-text);text-decoration:line-through;text-decoration-color:#3a6a3a;}
+  .video-item.seen .vid-title:hover{color:#7aba7a;}
+  .vid-dur{font-size:.65rem;color:var(--muted);flex-shrink:0;font-variant-numeric:tabular-nums;}
+  .message{text-align:center;padding:60px 40px;color:var(--muted);font-size:.8rem;letter-spacing:.1em;line-height:2.2;}
+  .spinner{display:inline-block;width:26px;height:26px;border:2px solid var(--border);border-top-color:var(--red);border-radius:50%;animation:spin .7s linear infinite;margin-bottom:14px;}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .empty-state{text-align:center;padding:80px 40px;}
+  .empty-state .big{font-family:'Bebas Neue',sans-serif;font-size:3rem;color:var(--border);letter-spacing:.1em;margin-bottom:12px;}
+  .empty-state p{color:var(--muted);font-size:.75rem;letter-spacing:.1em;margin-bottom:24px;}
+  .btn-add-first{background:var(--red);color:#fff;border:none;font-family:'Bebas Neue',sans-serif;font-size:1.1rem;letter-spacing:.1em;padding:12px 32px;cursor:pointer;}
+  .btn-add-first:hover{background:#cc2222;}
+  @media(max-width:640px){
+    header,.stats-bar,.filter-bar,.list-container{padding-left:16px;padding-right:16px;}
+    .tabs-wrap{padding:0 16px;}
+    .thumb{width:64px;height:36px;}
+    header h1{font-size:1.7rem;}
+    .stat-divider{display:none;}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <svg width="36" height="25" viewBox="0 0 40 28" fill="none"><rect width="40" height="28" rx="6" fill="#FF0000"/><polygon points="16,8 30,14 16,20" fill="white"/></svg>
+  <h1>Playlist Tracker</h1>
+  <span class="header-sub">Bevaka din progress</span>
+  <div class="sync-status" id="syncStatus">
+    <div class="sync-dot" id="syncDot"></div>
+    <span id="syncText">Ansluter…</span>
+  </div>
+</header>
+
+<div class="tabs-wrap" id="tabsWrap">
+  <button class="tab-add" onclick="openModal()" title="Lägg till playlist">＋</button>
+</div>
+
+<div class="stats-bar" id="statsBar">
+  <div class="stat"><span class="stat-num" id="statTotal">0</span><span>Totalt</span></div>
+  <div class="stat-divider"></div>
+  <div class="stat"><span class="stat-num accent" id="statSeen">0</span><span>Sedda</span></div>
+  <div class="stat-divider"></div>
+  <div class="stat"><span class="stat-num" id="statLeft">0</span><span>Kvar</span></div>
+  <div class="stat-divider"></div>
+  <div class="stat"><span class="stat-num" id="statTime" style="font-size:1rem">–</span><span>Tid kvar</span></div>
+  <div class="progress-wrap">
+    <div class="progress-label"><span>Progress</span><span id="progressPct">0%</span></div>
+    <div class="progress-track"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
+  </div>
+</div>
+
+<div class="filter-bar" id="filterBar">
+  <button class="filter-btn active" onclick="setFilter('all',this)">Alla</button>
+  <button class="filter-btn" onclick="setFilter('unseen',this)">Osedda</button>
+  <button class="filter-btn" onclick="setFilter('seen',this)">Sedda</button>
+  <button class="reset-btn" onclick="resetSeen()">Nollställ sedda</button>
+</div>
+
+<div class="list-container" id="listContainer">
+  <div class="message"><div class="spinner"></div><br>Ansluter till Firebase…</div>
+</div>
+
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <h2>Lägg till Playlist</h2>
+    <input type="text" id="modalInput" placeholder="Klistra in YouTube playlist-länk…" onkeydown="if(event.key==='Enter')modalLoad()"/>
+    <div class="modal-err" id="modalErr"></div>
+    <div class="modal-btns">
+      <button class="btn-cancel" onclick="closeModal()">Avbryt</button>
+      <button class="btn-load" id="modalLoadBtn" onclick="modalLoad()">Ladda</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── CONFIG ───────────────────────────────────────────────
+const YT_KEY  = 'AIzaSyB7eigm8-Ly0LmkMqFswOikiNrB7D-QwJ4';
+const FB_URL  = 'https://playlist-tracker-1f2ce-default-rtdb.europe-west1.firebasedatabase.app';
+
+// ── STATE ────────────────────────────────────────────────
+let playlists = []; // [{id, title, items:[{videoId,title,thumb,durSec}]}]
+let activeIdx = -1;
+let filter    = 'all';
+let seenMap   = {}; // {plId: {videoId: true}}
+
+// ── FIREBASE HELPERS ─────────────────────────────────────
+async function fbGet(path) {
+  const r = await fetch(`${FB_URL}/${path}.json`);
+  const d = await r.json();
+  if (d && d.error) throw new Error(d.error);
+  return d;
+}
+async function fbSet(path, data) {
+  const r = await fetch(`${FB_URL}/${path}.json`, {
+    method: 'PUT',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(data)
+  });
+  const d = await r.json();
+  if (d && d.error) throw new Error(d.error);
+  return d;
+}
+async function fbPatch(path, data) {
+  const r = await fetch(`${FB_URL}/${path}.json`, {
+    method: 'PATCH',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify(data)
+  });
+  const d = await r.json();
+  if (d && d.error) throw new Error(d.error);
+  return d;
+}
+async function fbDelete(path) {
+  await fetch(`${FB_URL}/${path}.json`, { method: 'DELETE' });
+}
+
+// ── SYNC STATUS ───────────────────────────────────────────
+function setSyncStatus(state, text) {
+  document.getElementById('syncDot').className = 'sync-dot ' + state;
+  document.getElementById('syncText').textContent = text;
+}
+
+// ── BOOT ─────────────────────────────────────────────────
+window.addEventListener('load', async () => {
+  setSyncStatus('syncing','Ansluter…');
+  try {
+    const data = await fbGet('');
+    // Load playlists metadata
+    const meta = data?.playlists || {};
+    playlists = [];
+    for (const [id, pl] of Object.entries(meta)) {
+      playlists.push({ id, title: pl.title || id, items: pl.items ? Object.values(pl.items) : [] });
+    }
+    // Sort by order field if present
+    playlists.sort((a,b) => (meta[a.id].order||0) - (meta[b.id].order||0));
+
+    // Load seen
+    const seenRaw = data?.seen || {};
+    seenMap = {};
+    for (const [plId, vids] of Object.entries(seenRaw)) {
+      seenMap[plId] = vids || {};
+    }
+
+    setSyncStatus('ok','Synkad');
+    renderTabs();
+    if (playlists.length > 0) switchTab(0);
+    else showEmpty();
+  } catch(e) {
+    setSyncStatus('err','Anslutningsfel');
+    console.error(e);
+    showEmpty();
+  }
+});
+
+// ── YOUTUBE HELPERS ───────────────────────────────────────
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function extractPlId(url){
+  try{ return new URL(url.trim()).searchParams.get('list'); }
+  catch{ const m=url.match(/[?&]list=([^&]+)/); return m?m[1]:null; }
+}
+function parseDur(iso){
+  if(!iso)return 0;
+  const m=iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  return m?(+m[1]||0)*3600+(+m[2]||0)*60+(+m[3]||0):0;
+}
+function fmtDur(s){
+  const h=Math.floor(s/3600),m=Math.floor(s%3600/60),sec=s%60;
+  return h>0?`${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`:`${m}:${String(sec).padStart(2,'0')}`;
+}
+function fmtRemaining(s){
+  if(s<=0)return '0 min';
+  const h=Math.floor(s/3600),m=Math.floor(s%3600/60);
+  if(h>0&&m>0)return `${h}h ${m}m`;
+  if(h>0)return `${h}h`;
+  return `${m}m`;
+}
+
+async function fetchAllYTItems(plId){
+  let items=[],pt='';
+  do{
+    const d=await(await fetch(`https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50&playlistId=${plId}&key=${YT_KEY}${pt?'&pageToken='+pt:''}`)).json();
+    if(d.error)throw new Error(d.error.message);
+    items=items.concat(d.items||[]);
+    pt=d.nextPageToken||'';
+  }while(pt);
+  return items;
+}
+async function fetchYTTitle(plId){
+  const d=await(await fetch(`https://www.googleapis.com/youtube/v3/playlists?part=snippet&id=${plId}&key=${YT_KEY}`)).json();
+  return d.items?.[0]?.snippet?.title||'Playlist';
+}
+async function fetchDurations(ids){
+  const map={};
+  for(let i=0;i<ids.length;i+=50){
+    const batch=ids.slice(i,i+50);
+    const d=await(await fetch(`https://www.googleapis.com/youtube/v3/videos?part=contentDetails&id=${batch.join(',')}&key=${YT_KEY}`)).json();
+    (d.items||[]).forEach(v=>{ map[v.id]=parseDur(v.contentDetails?.duration); });
+  }
+  return map;
+}
+
+// ── MODAL ─────────────────────────────────────────────────
+function openModal(){ document.getElementById('modalOverlay').classList.add('visible'); setTimeout(()=>document.getElementById('modalInput').focus(),50); }
+function closeModal(){ document.getElementById('modalOverlay').classList.remove('visible'); document.getElementById('modalInput').value=''; document.getElementById('modalErr').textContent=''; }
+
+async function modalLoad(){
+  const val = document.getElementById('modalInput').value.trim();
+  const errEl = document.getElementById('modalErr');
+  errEl.textContent = '';
+  if(!val){ errEl.textContent='Ange en länk.'; return; }
+  const plId = extractPlId(val);
+  if(!plId){ errEl.textContent='Kunde inte hitta playlist-ID.'; return; }
+  if(playlists.find(p=>p.id===plId)){ errEl.textContent='Denna playlist finns redan.'; return; }
+
+  const btn = document.getElementById('modalLoadBtn');
+  btn.disabled=true; btn.textContent='Laddar…';
+  document.getElementById('listContainer').innerHTML='<div class="message"><div class="spinner"></div><br>Hämtar klipp och varaktigheter…<br><span style="font-size:.65rem;color:var(--muted)">Kan ta några sekunder för stora playlister</span></div>';
+
+  try{
+    const [rawItems, title] = await Promise.all([fetchAllYTItems(plId), fetchYTTitle(plId)]);
+    const ids = rawItems.map(i=>i.snippet?.resourceId?.videoId).filter(Boolean);
+    const durMap = await fetchDurations(ids);
+    const items = [];
+    rawItems.forEach(item=>{
+      const s=item.snippet;
+      const vid=s?.resourceId?.videoId;
+      if(!vid||s.title==='Deleted video'||s.title==='Private video')return;
+      items.push({videoId:vid, title:s.title, thumb:s.thumbnails?.medium?.url||s.thumbnails?.default?.url||'', durSec:durMap[vid]||0});
+    });
+
+    const pl = {id:plId, title, items};
+    playlists.push(pl);
+    if(!seenMap[plId]) seenMap[plId]={};
+
+    // Save to Firebase
+    setSyncStatus('syncing','Sparar…');
+    await fbSet(`playlists/${plId}`, { title, order: playlists.length-1, items: items.reduce((o,item,i)=>{ o[i]=item; return o; },{}) });
+    setSyncStatus('ok','Synkad');
+
+    closeModal();
+    renderTabs();
+    switchTab(playlists.length-1);
+  }catch(e){
+    errEl.textContent='Fel: '+e.message;
+    document.getElementById('listContainer').innerHTML='<div class="message">Något gick fel.</div>';
+    setSyncStatus('err','Fel');
+  }
+  btn.disabled=false; btn.textContent='Ladda';
+}
+
+// ── TABS ──────────────────────────────────────────────────
+function renderTabs(){
+  const wrap = document.getElementById('tabsWrap');
+  let html = '';
+  playlists.forEach((pl,i)=>{
+    html+=`<button class="tab${i===activeIdx?' active':''}" onclick="switchTab(${i})">
+      <span class="tab-label">${esc(pl.title)}</span>
+      <span class="tab-close" onclick="event.stopPropagation();removeTab(${i})">✕</span>
+    </button>`;
+  });
+  html+='<button class="tab-add" onclick="openModal()" title="Lägg till playlist">＋</button>';
+  wrap.innerHTML=html;
+}
+
+function switchTab(i){
+  activeIdx=i; filter='all';
+  renderTabs();
+  if(i<0||i>=playlists.length){showEmpty();return;}
+  renderList(playlists[i]);
+  document.querySelectorAll('.filter-btn').forEach((b,j)=>b.classList.toggle('active',j===0));
+}
+
+async function removeTab(i){
+  if(!confirm(`Ta bort "${playlists[i].title}" från trackern?`))return;
+  const plId = playlists[i].id;
+  playlists.splice(i,1);
+  if(activeIdx>=playlists.length) activeIdx=playlists.length-1;
+  setSyncStatus('syncing','Sparar…');
+  try{
+    await fbDelete(`playlists/${plId}`);
+    await fbDelete(`seen/${plId}`);
+    setSyncStatus('ok','Synkad');
+  }catch{ setSyncStatus('err','Fel'); }
+  renderTabs();
+  if(playlists.length>0) switchTab(activeIdx);
+  else showEmpty();
+}
+
+// ── RENDER ────────────────────────────────────────────────
+function renderList(pl){
+  const seen = seenMap[pl.id]||{};
+  const container = document.getElementById('listContainer');
+  if(!pl.items.length){ container.innerHTML='<div class="message">Inga klipp hittades.</div>'; return; }
+  let html=`<div class="playlist-title">${esc(pl.title)} — ${pl.items.length} klipp</div>`;
+  pl.items.forEach((item,i)=>{
+    const isSeen = !!seen[item.videoId];
+    const ytUrl=`https://www.youtube.com/watch?v=${item.videoId}&list=${pl.id}`;
+    html+=`<div class="video-item${isSeen?' seen':''}" id="vi-${item.videoId}" data-dur="${item.durSec}">
+      <div class="check-wrap"><input type="checkbox" ${isSeen?'checked':''} onchange="toggleSeen('${pl.id}','${item.videoId}',this)" onclick="event.stopPropagation()"></div>
+      <span class="vid-num">${i+1}</span>
+      ${item.thumb?`<img class="thumb" src="${esc(item.thumb)}" alt="" loading="lazy">`:''}
+      <a class="vid-title" href="${esc(ytUrl)}" target="_blank" rel="noopener">${esc(item.title)}</a>
+      ${item.durSec>0?`<span class="vid-dur">${fmtDur(item.durSec)}</span>`:''}
+    </div>`;
+  });
+  container.innerHTML=html;
+  document.getElementById('statsBar').classList.add('visible');
+  document.getElementById('filterBar').classList.add('visible');
+  updateStats();
+}
+
+function showEmpty(){
+  document.getElementById('statsBar').classList.remove('visible');
+  document.getElementById('filterBar').classList.remove('visible');
+  document.getElementById('listContainer').innerHTML=`<div class="empty-state"><div class="big">INGA PLAYLISTS</div><p>Klicka på + för att lägga till din första playlist</p><button class="btn-add-first" onclick="openModal()">+ Lägg till playlist</button></div>`;
+}
+
+// ── TOGGLE SEEN ───────────────────────────────────────────
+async function toggleSeen(plId, videoId, cb){
+  if(!seenMap[plId]) seenMap[plId]={};
+  const el = document.getElementById('vi-'+videoId);
+  if(cb.checked){ seenMap[plId][videoId]=true; el.classList.add('seen'); }
+  else{ delete seenMap[plId][videoId]; el.classList.remove('seen'); }
+  applyFilter(); updateStats();
+  setSyncStatus('syncing','Sparar…');
+  try{
+    if(cb.checked) await fbPatch(`seen/${plId}`, {[videoId]:true});
+    else await fbDelete(`seen/${plId}/${videoId}`);
+    setSyncStatus('ok','Synkad');
+  }catch{ setSyncStatus('err','Sparfel'); }
+}
+
+async function resetSeen(){
+  const pl=playlists[activeIdx];
+  if(!pl)return;
+  if(!confirm('Nollställa alla sedda klipp i denna playlist?'))return;
+  seenMap[pl.id]={};
+  document.querySelectorAll('.video-item').forEach(el=>{
+    el.classList.remove('seen');
+    const cb=el.querySelector('input[type=checkbox]');
+    if(cb)cb.checked=false;
+  });
+  applyFilter(); updateStats();
+  setSyncStatus('syncing','Sparar…');
+  try{ await fbDelete(`seen/${pl.id}`); setSyncStatus('ok','Synkad'); }
+  catch{ setSyncStatus('err','Fel'); }
+}
+
+// ── FILTER & STATS ────────────────────────────────────────
+function setFilter(f,btn){
+  filter=f;
+  document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  applyFilter();
+}
+function applyFilter(){
+  document.querySelectorAll('.video-item').forEach(el=>{
+    const s=el.classList.contains('seen');
+    el.classList.toggle('hidden', filter==='seen'?!s:filter==='unseen'?s:false);
+  });
+}
+function updateStats(){
+  const all=document.querySelectorAll('.video-item');
+  let total=all.length,seenC=0,unseenSec=0;
+  all.forEach(el=>{ if(el.classList.contains('seen'))seenC++; else unseenSec+=parseInt(el.dataset.dur||0); });
+  const pct=total?Math.round(seenC/total*100):0;
+  document.getElementById('statTotal').textContent=total;
+  document.getElementById('statSeen').textContent=seenC;
+  document.getElementById('statLeft').textContent=total-seenC;
+  document.getElementById('statTime').textContent=unseenSec>0?fmtRemaining(unseenSec):'0 min';
+  document.getElementById('progressPct').textContent=pct+'%';
+  document.getElementById('progressFill').style.width=pct+'%';
+}
+</script>
+</body>
+</html>
